@@ -1,0 +1,37 @@
+# GitHub PR Reviewer Container
+# Based on UBI 9 (Universal Base Image)
+FROM registry.access.redhat.com/ubi9/python-312:latest
+
+# Add labels for better metadata
+LABEL maintainer="tekton-pr-reviewer" \
+      description="GitHub PR Reviewer for Tekton Pipelines" \
+      version="1.0"
+
+# Set Python path
+ENV PYTHONPATH=/opt/app-root/src \
+    PYTHONUNBUFFERED=1
+
+# Create working directory
+RUN mkdir -p /opt/app-root
+
+# Create working directory
+WORKDIR /opt/app-root
+
+# Copy requirements first for better layer caching
+COPY src/requirements.txt .
+
+# Install Python dependencies
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/github_pr_reviewer.py /usr/local/bin/github_pr_reviewer.py
+
+# Set entrypoint
+ENTRYPOINT ["python3", "/usr/local/bin/github_pr_reviewer.py"]
+
+# Default command (will be overridden by Tekton task)
+CMD ["--help"]
+
+# Add health check (optional)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python3 /usr/local/bin/github_pr_reviewer.py --help >/dev/null 2>&1 || exit 1

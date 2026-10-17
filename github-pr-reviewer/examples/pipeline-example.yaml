@@ -1,0 +1,119 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: github-pr-review-pipeline
+  namespace: openshift-pipelines
+  labels:
+    app.kubernetes.io/version: "1.0"
+    app.kubernetes.io/component: pr-reviewer
+    app.kubernetes.io/part-of: github-integration
+spec:
+  description: |
+    Pipeline to automatically review GitHub pull requests.
+    This pipeline can be triggered by GitHub webhooks or run manually.
+
+  params:
+    - name: github-owner
+      type: string
+      description: "GitHub repository owner"
+    - name: github-repo
+      type: string
+      description: "GitHub repository name"
+    - name: pr-number
+      type: string
+      description: "Pull request number"
+    - name: review-type
+      type: string
+      description: "Type of review to submit"
+      default: "COMMENT"
+      enum: ["COMMENT", "APPROVE", "REQUEST_CHANGES"]
+    - name: verbosity
+      type: string
+      description: "Log verbosity level"
+      default: "INFO"
+      enum: ["DEBUG", "INFO", "WARNING", "ERROR"]
+    
+    # AI Analysis Parameters
+    - name: ai-endpoint
+      type: string
+      description: "OpenAI-compatible AI endpoint URL"
+      default: ""
+    - name: ai-model
+      type: string
+      description: "AI model name"
+      default: "gpt-3.5-turbo"
+    - name: ai-temperature
+      type: string
+      description: "AI temperature"
+      default: "0.1"
+
+  workspaces:
+    - name: output-workspace
+      description: "Output workspace for analysis results"
+      optional: true
+    - name: github-token-workspace
+      description: "Workspace for GitHub token secret"
+      optional: true
+    - name: ai-token-workspace
+      description: "Workspace for AI token secret"
+      optional: true
+
+  tasks:
+    - name: pr-review
+      taskRef:
+        name: github-pr-reviewer
+      params:
+        - name: owner
+          value: $(params.github-owner)
+        - name: repo
+          value: $(params.github-repo)
+        - name: pr-number
+          value: $(params.pr-number)
+        - name: review-type
+          value: $(params.review-type)
+        - name: verbosity
+          value: $(params.verbosity)
+        - name: ai-endpoint
+          value: $(params.ai-endpoint)
+        - name: ai-model
+          value: $(params.ai-model)
+        - name: ai-temperature
+          value: $(params.ai-temperature)
+        - name: image
+          value: "image-registry.openshift-image-registry.svc:5000/openshift-pipelines/github-pr-reviewer:latest"
+      workspaces:
+        - name: output
+          workspace: output-workspace
+        - name: github-token
+          workspace: github-token-workspace
+        - name: ai-token
+          workspace: ai-token-workspace
+      timeout: 3600s  # 1 hour timeout
+
+    - name: notify-results
+      taskRef:
+        name: slack-notification
+      params:
+        - name: message
+          value: |
+            GitHub PR Review Completed
+            ==========================
+            
+            Repository: $(params.github-owner)/$(params.github-repo)
+            PR: #$(params.pr-number)
+            Review Status: $(tasks.pr-review.results.review-status)
+            
+            Check the GitHub PR for detailed automated review comments.
+      runAfter:
+        - pr-review
+      when:
+        - input: "$(tasks.pr-review.results.review-status)"
+          operator: in
+          values: ["success"]
+      timeout: 300s
+
+  finally:
+    - name: cleanup-workspace
+      taskRef:
+        name: workspace-cleanup
+      timeout: 120s

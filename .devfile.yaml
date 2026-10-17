@@ -1,0 +1,36 @@
+schemaVersion: 2.2.2
+metadata:
+  name: "aiprrevew"
+  provider: Andrew Pitt
+  displayName: Tekton AI PR Review Task
+  description: Tekton AI PR Review Task
+  tags:
+    - YAML
+    - Tekton
+    - AI
+  projectType: Tekton
+  language: YAML
+components:
+  - name: tools
+    attributes:
+      pod-overrides:
+        metadata:
+          labels:
+            app: devspaces
+            costcentre: cicd
+    container:
+      image: quay.io/pittar/custom-udi-demo:latest
+      args: ['tail', '-f', '/dev/null']
+      mountSources: true
+      cpuLimit: '3'
+      cpuRequest: '250m'
+      memoryLimit: '4G'
+      memoryRequest: '2G'
+commands:
+  - id: configure-opencode
+    exec:
+      component: tools
+      commandLine: "mkdir -p /home/user/.config/opencode && cp /data/opencode/*.* /home/user/.config/opencode/"
+events:
+  postStart:
+    - configure-opencode
